@@ -4,6 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Small Fastify + TypeScript service for managing Arma Reforger `game.mods` through Pterodactyl. It includes a built-in panel, dependency expansion, and server-side file updates.
+<img width="1575" height="903" alt="untitled" src="https://github.com/user-attachments/assets/4aa8b10a-3634-4744-9f56-ce1b9ecb038b" />
 
 ## Highlights
 
