@@ -75,6 +75,16 @@ npm run check
 - [Installation and Usage Guide](docs/INSTALLATION.md)
 - [`.env.example`](.env.example)
 
+## Changelog
+
+### v0.1.0
+
+- Initial public release
+- Built-in panel for listing, staging, activating, and deactivating mods
+- Reforger mod metadata lookup support
+- Audit log support for mod changes
+- Installation/deployment docs and CI workflow
+
 ## Notes
 
 - The panel uses server-side Pterodactyl credentials, so the browser does not need a token field.
