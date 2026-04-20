@@ -1,5 +1,8 @@
 # Pterodactyl Arma Reforger Mod Manager
 
+[![CI](https://github.com/xShabixz/arma-modpanel/actions/workflows/ci.yml/badge.svg)](https://github.com/xShabixz/arma-modpanel/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Small Fastify + TypeScript service for managing Arma Reforger `game.mods` through Pterodactyl. It includes a built-in panel, dependency expansion, and server-side file updates.
 
 ## Highlights
