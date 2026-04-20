@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Mod Manager - Pterodactyl</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>{{CSS}}</style>
+</head>
+<body>
+<div class="toast-container" id="toasts"></div>
+
+<main class="app">
+  <header class="header">
+    <div class="logo">M</div>
+    <h1>Mod Manager</h1>
+    <span class="badge">Arma Reforger</span>
+  </header>
+
+  <div class="grid">
+    <!-- Left sidebar -->
+    <div style="display:grid;gap:16px;align-content:start">
+      <div class="card">
+        <div class="card-title">Server Connection</div>
+        <div class="row" style="gap:10px">
+          <div class="field">
+            <label>Server ID</label>
+            <input id="serverId" class="mono" type="text" value="__SERVER_ID__"/>
+          </div>
+          <div class="field">
+            <label>Config Path</label>
+            <input id="configPath" class="mono" type="text" value="__CONFIG_PATH__"/>
+          </div>
+        </div>
+        <div style="margin-top:12px" class="btns">
+          <button id="btnLoad" class="btn btn-primary">Load Mods</button>
+          <button id="btnCopyLink" class="btn btn-ghost btn-sm">Copy Link</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Add / Update Mod</div>
+        <div class="row" style="gap:10px">
+          <div class="field">
+            <label>Mod ID</label>
+            <input id="modId" class="mono" type="text" placeholder="A1B2C3D4E5F60718"/>
+          </div>
+          <div class="row row-2">
+            <div class="field">
+              <label>Name</label>
+              <input id="modName" type="text" placeholder="Mod name"/>
+            </div>
+            <div class="field">
+              <label>Version</label>
+              <input id="modVersion" type="text" placeholder="e.g. 1.2.3"/>
+            </div>
+            <div class="field">
+              <label>Type</label>
+              <select id="modContentType">
+                <option value="mod">Mod</option>
+                <option value="game">Game</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div style="margin:10px 0;display:flex;flex-wrap:wrap;gap:14px">
+          <label class="check"><input id="modRequired" type="checkbox"/> Required</label>
+          <label class="check"><input id="restartAfter" type="checkbox"/> Restart after</label>
+        </div>
+        <div style="margin-top:-4px;margin-bottom:8px;font-size:.78rem;color:var(--text3)">
+          Required = keep this mod required in config. Restart after = restart server after Activate/Remove.
+        </div>
+        <div class="btns">
+          <button id="btnLookupName" class="btn btn-ghost btn-sm">Lookup</button>
+          <button id="btnOpenWorkshop" class="btn btn-ghost btn-sm">Workshop</button>
+          <button id="btnQueue" class="btn btn-ghost btn-sm">Add To Pool</button>
+          <button id="btnUpsert" class="btn btn-primary btn-sm">Activate Now</button>
+        </div>
+        <div id="modState" style="margin-top:8px;font-size:.78rem;color:var(--text3)"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Bulk Import</div>
+        <div class="field">
+          <label>Paste JSON array or one modId per line</label>
+          <textarea id="bulkModsInput" class="mono" rows="4" placeholder='[{"modId":"BADC0DE...","name":"My Mod"}]&#10;or one ID per line'></textarea>
+        </div>
+        <div style="margin-top:10px" class="btns">
+          <button id="btnBulkAdd" class="btn btn-primary btn-sm">Import To Pool</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main content -->
+    <div>
+      <div class="card mod-section">
+        <div class="mod-header">
+          <div>
+            <div class="card-title" style="margin-bottom:4px">Mod Pool (Not Active Yet)</div>
+            <div class="mod-count" id="poolCount">0 mods in pool</div>
+            <div class="mod-count" id="usageSummary">0 active in config | 0 in pool</div>
+          </div>
+          <div class="mod-tools">
+            <div class="field" style="min-width:200px">
+              <input id="poolFilter" type="text" placeholder="Filter pool..."/>
+            </div>
+            <button id="btnPoolSelectAll" class="btn btn-ghost btn-sm">All</button>
+            <button id="btnPoolActivate" class="btn btn-primary btn-sm">Activate Selected</button>
+            <button id="btnPoolActivateAll" class="btn btn-ghost btn-sm">Activate All</button>
+            <button id="btnPoolRemove" class="btn btn-danger btn-sm">Remove</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th style="width:36px"><input type="checkbox" id="poolCheckAll"/></th>
+              <th>Name</th>
+              <th>Mod ID</th>
+              <th>Type</th>
+              <th>Version</th>
+              <th>Required</th>
+              <th>Status</th>
+              <th style="width:90px">Edit</th>
+            </tr></thead>
+            <tbody id="poolBody">
+              <tr><td colspan="8" class="empty-row">Use Add / Bulk Import to prepare mods</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card mod-section" style="margin-top:16px">
+        <div class="mod-header">
+          <div>
+            <div class="card-title" style="margin-bottom:4px">Active Mods (In Config)</div>
+            <div class="mod-count" id="modCount">0 active mods</div>
+          </div>
+          <div class="mod-tools">
+            <div class="field" style="min-width:200px">
+              <input id="modsFilter" type="text" placeholder="Filter active mods..."/>
+            </div>
+            <button id="btnSelectAll" class="btn btn-ghost btn-sm">All</button>
+            <button id="btnDeactivateSelected" class="btn btn-danger btn-sm">Deactivate Selected</button>
+            <button id="btnDeactivateAll" class="btn btn-ghost btn-sm">Deactivate All</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th style="width:36px"><input type="checkbox" id="checkAll"/></th>
+              <th>Name</th>
+              <th>Mod ID</th>
+              <th>Type</th>
+              <th>State</th>
+              <th>Version</th>
+              <th>Required</th>
+              <th style="width:90px">Edit</th>
+            </tr></thead>
+            <tbody id="modsBody">
+              <tr><td colspan="8" class="empty-row">Click "Load Mods" to begin</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-footer">
+          <div class="mod-count" id="modsPageInfo">Page 1</div>
+          <div class="btns">
+            <button id="btnModsPrev" class="btn btn-ghost btn-sm">Prev</button>
+            <button id="btnModsNext" class="btn btn-ghost btn-sm">Next</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mod-section" style="margin-top:16px">
+        <div class="mod-header">
+          <div>
+            <div class="card-title" style="margin-bottom:4px">Audit Log</div>
+            <div class="mod-count" id="auditCount">0 log entries</div>
+          </div>
+          <div class="mod-tools">
+            <button id="btnAuditRefresh" class="btn btn-ghost btn-sm">Refresh</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th style="width:170px">Time</th>
+              <th style="width:100px">Action</th>
+              <th style="width:90px">Scope</th>
+              <th>Config</th>
+              <th>Changes</th>
+            </tr></thead>
+            <tbody id="auditBody">
+              <tr><td colspan="5" class="empty-row">No log entries loaded</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-footer">
+          <div class="mod-count" id="auditPageInfo">Page 1</div>
+          <div class="btns">
+            <button id="btnAuditPrev" class="btn btn-ghost btn-sm">Prev</button>
+            <button id="btnAuditNext" class="btn btn-ghost btn-sm">Next</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const toastBox=$('toasts'), modsBody=$('modsBody'), poolBody=$('poolBody'), auditBody=$('auditBody');
+const canEdit=(__PANEL_CAN_EDIT__===true)||(__PANEL_CAN_EDIT__==="true");
+let activeMods=[], poolMods=[], nameCache={}, installedVersionOverride={};
+let auditLogEntries=[];
+let activeModsPage=1;
+let auditLogPage=1;
+let autoLookupTimer=null;
+const CK_NAME='ptero-mod-name-cache-v1', CK_CONN='ptero-mod-conn-v1', CK_POOL='ptero-mod-pool-v1';
+const CK_RESOLVE='ptero-mod-resolve-cache-v1';
+const ACTIVE_MODS_PER_PAGE=12;
+const AUDIT_LOG_PER_PAGE=8;
+
+// Toast system
+function toast(msg,type='info',ms=3500){
+  const el=document.createElement('div');
+  el.className='toast '+type;
+  el.textContent=msg;
+  toastBox.appendChild(el);
+  setTimeout(()=>{el.classList.add('out');setTimeout(()=>el.remove(),300)},ms);
+}
+
+// Confirm dialog
+function confirm2(title,msg){
+  return new Promise(resolve=>{
+    const ov=document.createElement('div');
+    ov.className='modal-overlay';
+    ov.innerHTML=`<div class="modal"><h3>${title}</h3><p>${msg}</p><div class="btns"><button class="btn btn-ghost" data-r="0">Cancel</button><button class="btn btn-danger" data-r="1">Confirm</button></div></div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener('click',e=>{
+      const r=e.target.dataset?.r;
+      if(r!==undefined){ov.remove();resolve(r==='1')}
+    });
+  });
+}
+
+// Persistence
+function loadStore(k,fallback){try{const r=localStorage.getItem(k);return r?JSON.parse(r):fallback}catch{return fallback}}
+function saveStore(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}
+
+nameCache=loadStore(CK_NAME,{});
+poolMods=loadStore(CK_POOL,[]);
+const resolveCache=loadStore(CK_RESOLVE,{});
+const persistedConn=loadStore(CK_CONN,{});
+const query=new URLSearchParams(location.search);
+$('serverId').value=query.get('serverId')||persistedConn.serverId||'__SERVER_ID__';
+$('configPath').value=query.get('configPath')||persistedConn.configPath||'__CONFIG_PATH__';
+
+function saveConn(){saveStore(CK_CONN,{serverId:$('serverId').value.trim(),configPath:$('configPath').value.trim()})}
+function rememberName(id,name){if(id&&name){nameCache[id]=name;saveStore(CK_NAME,nameCache)}}
+function rememberResolvedMeta(id,meta){
+  const key=normalizeModId(id);
+  if(!key||!meta) return;
+  resolveCache[key]={
+    name:typeof meta.name==='string'&&meta.name.trim()?meta.name.trim():undefined,
+    version:typeof meta.version==='string'&&meta.version.trim()?meta.version.trim():undefined,
+    source:typeof meta.source==='string'?meta.source:undefined,
+    at:new Date().toISOString()
+  };
+  saveStore(CK_RESOLVE,resolveCache);
+}
+function savePool(){saveStore(CK_POOL,poolMods)}
+function getBase(){return{serverId:$('serverId').value.trim(),configPath:$('configPath').value.trim()||'/config.json'}}
+function normalizeModId(v){return String(v||'').trim().toUpperCase()}
+function normalizeContentType(v){return String(v||'mod').trim().toLowerCase()==='game'?'game':'mod'}
+function esc(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;')}
+function clampPage(page,total){
+  if(total<=1)return 1;
+  return Math.min(Math.max(1,page),total);
+}
+function formatAuditChange(change){
+  const label=change.action==='add'?'Added':change.action==='remove'?'Removed':'Updated';
+  const before=change.before?.name||change.before?.modId||'';
+  const after=change.after?.name||change.after?.modId||'';
+  if(change.action==='add') return label+': '+after;
+  if(change.action==='remove') return label+': '+before;
+  return label+': '+(after||before);
+}
+
+async function apiPost(path,body){
+  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const t=await r.text();
+  let d;try{d=t?JSON.parse(t):{}}catch{d={message:t||'Invalid response'}}
+  if(!r.ok)throw new Error(d.message||'Request failed ('+r.status+')');
+  return d;
+}
+
+function isInstalled(modId){
+  const id=normalizeModId(modId);
+  return id&&activeMods.some(m=>normalizeModId(m.modId||m.modID)===id);
+}
+function getLoaded(modId){
+  const id=normalizeModId(modId);
+  return activeMods.find(m=>normalizeModId(m.modId||m.modID)===id)||null;
+}
+function inPool(modId){
+  const id=normalizeModId(modId);
+  return id&&poolMods.some(m=>normalizeModId(m.modId||m.modID)===id);
+}
+
+function renderMods(mods){
+  activeMods=Array.isArray(mods)?mods:[];
+  const filter=($('modsFilter').value||'').toLowerCase().trim();
+  const filtered=activeMods.filter(m=>{
+    if(!filter)return true;
+    const id=(m.modId||m.modID||'').toLowerCase();
+    const name=(m.name||'').toLowerCase();
+    return id.includes(filter)||name.includes(filter);
+  });
+  $('modCount').textContent=activeMods.length+' active mod'+(activeMods.length!==1?'s':'');
+  $('usageSummary').textContent=activeMods.length+' active in config | '+poolMods.length+' in pool';
+  const totalPages=Math.max(1,Math.ceil(filtered.length/ACTIVE_MODS_PER_PAGE));
+  activeModsPage=clampPage(activeModsPage,totalPages);
+  const start=(activeModsPage-1)*ACTIVE_MODS_PER_PAGE;
+  const pageMods=filtered.slice(start,start+ACTIVE_MODS_PER_PAGE);
+  $('modsPageInfo').textContent='Page '+activeModsPage+' / '+totalPages+' ('+filtered.length+' shown)';
+  $('btnModsPrev').disabled=activeModsPage<=1;
+  $('btnModsNext').disabled=activeModsPage>=totalPages;
+  modsBody.innerHTML='';
+  if(!filtered.length){modsBody.innerHTML='<tr><td colspan="8" class="empty-row">No mods found</td></tr>';return}
+  for(const m of pageMods){
+    const tr=document.createElement('tr');
+    const id=(m.modId||m.modID||'').trim();
+    const name=(m.name||'-').trim();
+    const ver=installedVersionOverride[id]||m.version||'';
+    const contentType=normalizeContentType(m.contentType);
+    const stateTag='<span class="tag tag-active">Active</span>';
+    if(id&&name!=='-')rememberName(id,name);
+    tr.innerHTML=
+      '<td><input type="checkbox" data-modid="'+id+'" '+(canEdit?'':'disabled')+'/></td>'+
+      '<td><strong>'+name+'</strong></td>'+
+      '<td class="mono">'+id+'</td>'+
+      '<td>'+(contentType==='game'?'<span class="tag tag-config">Game</span>':'<span class="tag tag-yes">Mod</span>')+'</td>'+
+      '<td>'+stateTag+'</td>'+
+      '<td><input class="ver-input" data-vf="'+id+'" value="'+ver+'" '+(canEdit?'':'disabled')+'/></td>'+
+      '<td>'+(m.required?'<span class="tag tag-yes">Yes</span>':'<span class="tag tag-no">No</span>')+'</td>'+
+      '<td><button class="btn btn-ghost btn-sm" data-edit-active="'+id+'">Edit</button></td>';
+    modsBody.appendChild(tr);
+  }
+  modsBody.querySelectorAll('input[data-vf]').forEach(el=>{
+    el.addEventListener('change',()=>updateVer(el.dataset.vf,el.value.trim()));
+  });
+  modsBody.querySelectorAll('button[data-edit-active]').forEach(el=>{
+    el.addEventListener('click',()=>editActiveMod(el.dataset.editActive));
+  });
+}
+
+function renderAuditLog(){
+  const totalPages=Math.max(1,Math.ceil(auditLogEntries.length/AUDIT_LOG_PER_PAGE));
+  auditLogPage=clampPage(auditLogPage,totalPages);
+  const start=(auditLogPage-1)*AUDIT_LOG_PER_PAGE;
+  const pageEntries=auditLogEntries.slice(start,start+AUDIT_LOG_PER_PAGE);
+
+  $('auditCount').textContent=auditLogEntries.length+' log entr'+(auditLogEntries.length===1?'y':'ies');
+  $('auditPageInfo').textContent='Page '+auditLogPage+' / '+totalPages;
+  $('btnAuditPrev').disabled=auditLogPage<=1;
+  $('btnAuditNext').disabled=auditLogPage>=totalPages;
+
+  auditBody.innerHTML='';
+  if(!pageEntries.length){
+    auditBody.innerHTML='<tr><td colspan="5" class="empty-row">No log entries</td></tr>';
+    return;
+  }
+
+  for(const entry of pageEntries){
+    const tr=document.createElement('tr');
+    const changesText=entry.changes.map(formatAuditChange).slice(0,3).join('; ')+(entry.changes.length>3?' ...':'');
+    tr.innerHTML=
+      '<td class="mono">'+esc(entry.timestamp.replace('T',' ').replace('Z',' UTC'))+'</td>'+
+      '<td><span class="tag '+(entry.event==='mods-remove'?'tag-no':'tag-yes')+'">'+(entry.event==='mods-remove'?'Remove':'Upsert')+'</span></td>'+
+      '<td>'+esc(entry.scope)+'</td>'+
+      '<td class="mono">'+esc(entry.configPath)+(entry.serverId?' | '+esc(entry.serverId):'')+'</td>'+
+      '<td>'+esc(changesText||'No visible changes')+'</td>';
+    auditBody.appendChild(tr);
+  }
+}
+
+async function loadAuditLog(){
+  try{
+    const res=await apiPost('/panel/api/audit-log',{limit:100});
+    auditLogEntries=Array.isArray(res.entries)?res.entries:[];
+    renderAuditLog();
+  }catch(e){
+    auditLogEntries=[];
+    renderAuditLog();
+    toast(e.message||'Failed to load audit log','error');
+  }
+}
+
+function renderPool(){
+  const filter=($('poolFilter').value||'').toLowerCase().trim();
+  const filtered=poolMods.filter(m=>{
+    if(!filter)return true;
+    const id=(m.modId||m.modID||'').toLowerCase();
+    const name=(m.name||'').toLowerCase();
+    return id.includes(filter)||name.includes(filter);
+  });
+
+  $('poolCount').textContent=poolMods.length+' mod'+(poolMods.length!==1?'s':'')+' in pool';
+  $('usageSummary').textContent=activeMods.length+' active in config | '+poolMods.length+' in pool';
+
+  poolBody.innerHTML='';
+  if(!filtered.length){
+    poolBody.innerHTML='<tr><td colspan="8" class="empty-row">No staged mods</td></tr>';
+    return;
+  }
+
+  for(const m of filtered){
+    const tr=document.createElement('tr');
+    const id=(m.modId||m.modID||'').trim();
+    const name=(m.name||nameCache[id]||'-').trim();
+    const ver=m.version||'';
+    const contentType=normalizeContentType(m.contentType);
+    const requiredTag=m.required?'<span class="tag tag-yes">Yes</span>':'<span class="tag tag-no">No</span>';
+    const status=isInstalled(id)
+      ? '<span class="tag tag-active">Already Active</span>'
+      : '<span class="tag tag-config">Staged</span>';
+
+    tr.innerHTML=
+      '<td><input type="checkbox" data-pool-modid="'+id+'" '+(canEdit?'':'disabled')+'/></td>'+
+      '<td><strong>'+name+'</strong></td>'+
+      '<td class="mono">'+id+'</td>'+
+      '<td>'+(contentType==='game'?'<span class="tag tag-config">Game</span>':'<span class="tag tag-yes">Mod</span>')+'</td>'+
+      '<td>'+ver+'</td>'+
+      '<td>'+requiredTag+'</td>'+
+      '<td>'+status+'</td>'+
+      '<td><button class="btn btn-ghost btn-sm" data-edit-pool="'+id+'">Edit</button></td>';
+    poolBody.appendChild(tr);
+  }
+  poolBody.querySelectorAll('button[data-edit-pool]').forEach(el=>{
+    el.addEventListener('click',()=>editPoolMod(el.dataset.editPool));
+  });
+}
+
+function openEditModal(title,mod){
+  return new Promise(resolve=>{
+    const ov=document.createElement('div');
+    ov.className='modal-overlay';
+    ov.innerHTML='<div class="modal">'+
+      '<h3>'+esc(title)+'</h3>'+
+      '<div class="field" style="margin-bottom:10px"><label>Mod Name</label><input id="editModName" type="text" value="'+esc(mod.name||'')+'"/></div>'+
+      '<div class="field" style="margin-bottom:10px"><label>Mod ID</label><input id="editModId" class="mono" type="text" value="'+esc(mod.modId||'')+'" readonly/></div>'+
+      '<div class="field" style="margin-bottom:10px"><label>Mod Version</label><input id="editModVersion" type="text" placeholder="e.g. 1.2.3" value="'+esc(mod.version||'')+'"/></div>'+
+      '<div class="field" style="margin-bottom:10px"><label>Type</label><select id="editModContentType"><option value="mod" '+(normalizeContentType(mod.contentType)==='mod'?'selected':'')+'>Mod</option><option value="game" '+(normalizeContentType(mod.contentType)==='game'?'selected':'')+'>Game</option></select></div>'+
+      '<label class="check" style="margin-bottom:16px"><input id="editModRequired" type="checkbox" '+(mod.required?'checked':'')+'/> Required</label>'+
+      '<div class="btns" style="justify-content:flex-end"><button class="btn btn-ghost" data-edit-cancel="1">Cancel</button><button class="btn btn-primary" data-edit-save="1">Save</button></div>'+
+      '</div>';
+    document.body.appendChild(ov);
+
+    const close=(value)=>{ov.remove();resolve(value)};
+    ov.addEventListener('click',e=>{
+      if(e.target===ov||e.target.dataset?.editCancel==='1')return close(null);
+      if(e.target.dataset?.editSave==='1'){
+        const name=$('editModName').value.trim();
+        const version=$('editModVersion').value.trim();
+        const required=$('editModRequired').checked;
+        const contentType=normalizeContentType($('editModContentType').value);
+        close({name:name||undefined,version:version||undefined,required,contentType});
+      }
+    });
+  });
+}
+
+async function editPoolMod(modId){
+  if(!canEdit)return;
+  const id=normalizeModId(modId);
+  const idx=poolMods.findIndex(m=>normalizeModId(m.modId||m.modID)===id);
+  if(idx<0)return;
+
+  const row=poolMods[idx];
+  const result=await openEditModal('Edit Pool Mod',{modId:id,name:row.name,version:row.version,required:!!row.required,contentType:row.contentType});
+  if(!result)return;
+
+  poolMods[idx]={...row,modId:id,name:result.name,version:result.version,required:result.required,contentType:result.contentType};
+  if(result.name)rememberName(id,result.name);
+  savePool();
+  renderPool();
+  hydrate();
+  toast('Pool mod updated','ok');
+}
+
+async function editActiveMod(modId){
+  if(!canEdit)return;
+  const id=normalizeModId(modId);
+  const row=activeMods.find(m=>normalizeModId(m.modId||m.modID)===id);
+  if(!row)return;
+
+  const result=await openEditModal('Edit Active Mod',{modId:id,name:row.name,version:row.version,required:!!row.required,contentType:row.contentType});
+  if(!result)return;
+
+  try{
+    toast('Updating active mod...','info');
+    await apiPost('/panel/api/mods/upsert',{...getBase(),restartAfterInstall:$('restartAfter').checked,
+      mods:[{modId:id,name:result.name,version:result.version,required:result.required,contentType:result.contentType}]});
+    if(result.name)rememberName(id,result.name);
+    await loadMods();
+    renderPool();
+    hydrate();
+    toast('Active mod updated','ok');
+  }catch(e){toast(e.message,'error')}
+}
+
+function upsertPool(mods){
+  const map=new Map(poolMods.map(m=>[normalizeModId(m.modId||m.modID),m]));
+  for(const input of mods){
+    const modId=normalizeModId(input.modId||input.modID||input.modit);
+    if(!modId)continue;
+    const current=map.get(modId)||{modId};
+    const merged={
+      ...current,
+      modId,
+      name:input.name||current.name,
+      version:input.version||current.version,
+      required:Boolean(input.required),
+      contentType:normalizeContentType(input.contentType||current.contentType)
+    };
+    map.set(modId,merged);
+  }
+  poolMods=Array.from(map.values());
+  savePool();
+  renderPool();
+}
+
+function updateState(){
+  const id=$('modId').value.trim();
+  if(!id){$('modState').textContent='';return}
+  if(isInstalled(id)){$('modState').textContent='Active in config';return}
+  if(inPool(id)){$('modState').textContent='In pool (not active yet)';return}
+  $('modState').textContent='New mod';
+}
+function hydrate(){
+  const id=$('modId').value.trim();
+  if(!id)return updateState();
+  const active=getLoaded(id);
+  const staged=poolMods.find(m=>normalizeModId(m.modId||m.modID)===normalizeModId(id));
+  const m=active||staged;
+  if(m){
+    if(!$('modName').value.trim()&&m.name)$('modName').value=m.name;
+    if(!$('modVersion').value.trim()&&m.version)$('modVersion').value=m.version;
+    $('modContentType').value=normalizeContentType(m.contentType);
+  }
+  updateState();
+}
+
+function openWorkshopPage(){
+  const modId=normalizeModId($('modId').value);
+  if(!modId){
+    toast('Enter a Mod ID first','error');
+    return;
+  }
+
+  window.open('https://reforger.armaplatform.com/workshop/'+encodeURIComponent(modId),'_blank','noopener');
+}
+
+async function loadMods(){
+  try{
+    toast('Loading mods...','info');
+    const res=await apiPost('/panel/api/mods/list',getBase());
+    const modsRaw=Array.isArray(res.mods)?res.mods:[];
+    const mods=modsRaw.filter(m=>(m.state||'configured-only')!=='runtime-only').map(m=>({
+      ...m,
+      state:'active'
+    }));
+    installedVersionOverride={};
+    for(const m of mods){const id=(m.modId||m.modID||'').trim();if(id&&m.version)installedVersionOverride[id]=m.version}
+    activeModsPage=1;
+    renderMods(mods);
+    renderPool();
+    await loadAuditLog();
+    toast('Loaded '+mods.length+' active mod(s)','ok');
+    hydrate();
+  }catch(e){toast(e.message||'Load failed','error')}
+}
+
+async function lookupName(){
+  if(!canEdit)return toast('View-only mode','error');
+  try{
+    const id=$('modId').value.trim();
+    if(!id)throw new Error('Enter a Mod ID first');
+    const m=getLoaded(id);
+    if(m){
+      if(!$('modName').value.trim()&&m.name)$('modName').value=m.name;
+      if(!$('modVersion').value.trim()&&m.version)$('modVersion').value=m.version;
+      $('modContentType').value=normalizeContentType(m.contentType);
+      toast('Loaded from active config','ok');updateState();return;
+    }
+    const staged=poolMods.find(mod=>normalizeModId(mod.modId||mod.modID)===normalizeModId(id));
+    if(staged){
+      if(!$('modName').value.trim()&&staged.name)$('modName').value=staged.name;
+      if(!$('modVersion').value.trim()&&staged.version)$('modVersion').value=staged.version;
+      $('modContentType').value=normalizeContentType(staged.contentType);
+      toast('Loaded from pool','ok');updateState();return;
+    }
+    if(nameCache[id]){$('modName').value=nameCache[id];toast('Loaded from cache','ok');updateState();return}
+    const cached=resolveCache[normalizeModId(id)];
+    if(cached?.name){
+      $('modName').value=cached.name;
+      if(cached.version&&!$('modVersion').value.trim())$('modVersion').value=cached.version;
+      toast('Loaded from resolver cache','ok');
+      updateState();
+      return;
+    }
+    toast('Resolving name...','info');
+    const res=await apiPost('/panel/api/mods/resolve',{modit:id});
+    if(res&&(res.name||res.version)){
+      $('modName').value=res.name||'';
+      if(!$('modVersion').value.trim()&&res.version)$('modVersion').value=res.version;
+      if(res.name)rememberName(id,res.name);
+      rememberResolvedMeta(id,res);
+      toast('Resolved from '+res.source,'ok');
+    }else{
+      $('modState').textContent='Open Workshop to verify name';
+      toast('No metadata found. Open Workshop.','error');
+    }
+    updateState();
+  }catch(e){toast(e.message,'error')}
+}
+
+async function autoLookupNameFromModId(){
+  if(!canEdit)return;
+  const modId=normalizeModId($('modId').value);
+  if(!modId)return;
+  if($('modName').value.trim())return;
+
+  const active=getLoaded(modId);
+  if(active?.name){
+    $('modName').value=active.name;
+    $('modContentType').value=normalizeContentType(active.contentType);
+    updateState();
+    return;
+  }
+
+  const staged=poolMods.find(mod=>normalizeModId(mod.modId||mod.modID)===modId);
+  if(staged?.name){
+    $('modName').value=staged.name;
+    $('modContentType').value=normalizeContentType(staged.contentType);
+    updateState();
+    return;
+  }
+
+  if(nameCache[modId]){
+    $('modName').value=nameCache[modId];
+    updateState();
+    return;
+  }
+
+  const cached=resolveCache[modId];
+  if(cached?.name){
+    $('modName').value=cached.name;
+    if(cached.version&&!$('modVersion').value.trim())$('modVersion').value=cached.version;
+    updateState();
+    return;
+  }
+
+  try{
+    const res=await apiPost('/panel/api/mods/resolve',{modit:modId});
+    if(res?.name&&!$('modName').value.trim()){
+      $('modName').value=res.name;
+      rememberName(modId,res.name);
+      if(res.version&&!$('modVersion').value.trim())$('modVersion').value=res.version;
+    }
+    if(res?.name||res?.version){
+      rememberResolvedMeta(modId,res);
+    }
+    updateState();
+  }catch(e){
+    console.error('Auto-lookup failed:',e);
+    updateState();
+  }
+}
+
+function scheduleAutoLookup(){
+  if(autoLookupTimer){
+    clearTimeout(autoLookupTimer);
+  }
+  // Show resolving status
+  const modState=$('modState');
+  if(modState) modState.textContent='Resolving...';
+  
+  autoLookupTimer=setTimeout(()=>{
+    autoLookupNameFromModId();
+  },450);
+}
+
+async function updateVer(modId,ver){
+  if(!canEdit)return toast('View-only','error');
+  try{
+    const m=getLoaded(modId);if(!m)throw new Error('Mod not in config');
+    await apiPost('/panel/api/mods/upsert',{...getBase(),restartAfterInstall:$('restartAfter').checked,
+      mods:[{modId,name:m.name||nameCache[modId],version:ver||m.version,required:!!m.required,contentType:normalizeContentType(m.contentType)}]});
+    await loadMods();toast('Version updated','ok');
+  }catch(e){toast(e.message,'error')}
+}
+
+async function queueMod(){
+  if(!canEdit)return toast('View-only','error');
+  try{
+    const modId=normalizeModId($('modId').value);
+    if(!modId)throw new Error('Mod ID is required');
+    let name=$('modName').value.trim()||nameCache[modId]||undefined;
+    let ver=$('modVersion').value.trim()||undefined;
+    if(!name||!ver){
+      try{const lk=await apiPost('/panel/api/mods/resolve',{modit:modId});if(!name&&lk.name)name=lk.name;if(!ver&&lk.version)ver=lk.version}catch{}
+    }
+    upsertPool([{modId,name,version:ver,required:$('modRequired').checked,contentType:normalizeContentType($('modContentType').value)}]);
+    if(name)rememberName(modId,name);
+    toast('Added to pool','ok');
+    updateState();
+  }catch(e){toast(e.message,'error')}
+}
+
+async function upsertMod(){
+  if(!canEdit)return toast('View-only','error');
+  try{
+    const modId=normalizeModId($('modId').value);
+    if(!modId)throw new Error('Mod ID is required');
+    let name=$('modName').value.trim()||nameCache[modId]||undefined;
+    let ver=$('modVersion').value.trim()||undefined;
+    const m=getLoaded(modId);
+    const staged=poolMods.find(mod=>normalizeModId(mod.modId||mod.modID)===modId);
+    if(m){if(!name&&m.name)name=m.name;if(!ver&&m.version)ver=m.version}
+    if(staged){if(!name&&staged.name)name=staged.name;if(!ver&&staged.version)ver=staged.version}
+    if(!name||!ver){
+      try{const lk=await apiPost('/panel/api/mods/resolve',{modit:modId});if(!name&&lk.name)name=lk.name;if(!ver&&lk.version)ver=lk.version}catch{}
+    }
+    toast('Activating mod...','info');
+    await apiPost('/panel/api/mods/upsert',{...getBase(),restartAfterInstall:$('restartAfter').checked,
+      mods:[{modId,name,version:ver,required:$('modRequired').checked,contentType:normalizeContentType($('modContentType').value)}]});
+    poolMods=poolMods.filter(mod=>normalizeModId(mod.modId||mod.modID)!==modId);
+    savePool();
+    renderPool();
+    if(name)rememberName(modId,name);
+    await loadMods();toast('Mod activated!','ok');updateState();
+  }catch(e){toast(e.message,'error')}
+}
+
+async function deactivateActive(selectedOnly){
+  if(!canEdit)return toast('View-only','error');
+  const sel=selectedOnly
+    ? Array.from(modsBody.querySelectorAll('input[type=checkbox]:checked')).map(e=>e.dataset.modid).filter(Boolean)
+    : activeMods.map(m=>normalizeModId(m.modId||m.modID)).filter(Boolean);
+  if(!sel.length)return toast(selectedOnly?'Select mods to deactivate':'No active mods to deactivate','error');
+  const selectedSet=new Set(sel.map(normalizeModId).filter(Boolean));
+  const toPool=activeMods
+    .filter(m=>selectedSet.has(normalizeModId(m.modId||m.modID)))
+    .map(m=>({
+      modId:normalizeModId(m.modId||m.modID),
+      name:m.name||undefined,
+      version:m.version||undefined,
+      required:!!m.required,
+      contentType:normalizeContentType(m.contentType)
+    }));
+  const ok=await confirm2('Deactivate Mods','Move '+sel.length+' mod(s) out of active config into pool?');
+  if(!ok)return;
+  try{
+    toast('Deactivating '+sel.length+' mod(s)...','info');
+    await apiPost('/panel/api/mods/remove',{...getBase(),restartAfterInstall:$('restartAfter').checked,modIDs:sel});
+    upsertPool(toPool);
+    await loadMods();toast('Deactivated '+sel.length+' mod(s) and moved to pool','ok');
+  }catch(e){toast(e.message,'error')}
+}
+
+function removePoolSelected(){
+  if(!canEdit)return toast('View-only','error');
+  const sel=Array.from(poolBody.querySelectorAll('input[type=checkbox]:checked')).map(e=>normalizeModId(e.dataset.poolModid)).filter(Boolean);
+  if(!sel.length)return toast('Select mods in pool','error');
+  const removeSet=new Set(sel);
+  poolMods=poolMods.filter(m=>!removeSet.has(normalizeModId(m.modId||m.modID)));
+  savePool();
+  renderPool();
+  updateState();
+  toast('Removed '+sel.length+' mod(s) from pool','ok');
+}
+
+async function activatePool(selectedOnly){
+  if(!canEdit)return toast('View-only','error');
+  try{
+    const selectedIds=selectedOnly
+      ? Array.from(poolBody.querySelectorAll('input[type=checkbox]:checked')).map(e=>normalizeModId(e.dataset.poolModid)).filter(Boolean)
+      : poolMods.map(m=>normalizeModId(m.modId||m.modID));
+    if(!selectedIds.length)return toast('No mods selected from pool','error');
+
+    const activeSet=new Set(activeMods.map(m=>normalizeModId(m.modId||m.modID)));
+    const sourceMods=poolMods.filter(m=>selectedIds.includes(normalizeModId(m.modId||m.modID)));
+    const toActivate=sourceMods.filter(m=>!activeSet.has(normalizeModId(m.modId||m.modID)));
+    if(!toActivate.length)return toast('Selected mods are already active','info');
+
+    toast('Activating '+toActivate.length+' mod(s)...','info');
+    await apiPost('/panel/api/mods/upsert',{...getBase(),restartAfterInstall:$('restartAfter').checked,mods:toActivate});
+    const removeSet=new Set(toActivate.map(m=>normalizeModId(m.modId||m.modID)));
+    poolMods=poolMods.filter(m=>!removeSet.has(normalizeModId(m.modId||m.modID)));
+    savePool();
+    renderPool();
+    await loadMods();
+    toast('Activated '+toActivate.length+' mod(s)','ok');
+  }catch(e){toast(e.message,'error')}
+}
+
+function parseBulk(raw){
+  raw=(raw||'').trim();if(!raw)throw new Error('Paste mod list first');
+  try{
+    const p=JSON.parse(raw);
+    const list=Array.isArray(p)?p:[p];
+    const out=list.map(i=>{
+      if(typeof i==='string')return i.trim()?{modId:i.trim()}:null;
+      if(!i||typeof i!=='object')return null;
+      const id=(i.modId||i.modID||i.modit||'').trim();if(!id)return null;
+      const rawVersion=typeof i.version==='string'?i.version.trim():'';
+      return{modId:id,name:typeof i.name==='string'?i.name.trim():undefined,version:rawVersion||undefined,required:!!i.required,contentType:normalizeContentType(i.contentType)};
+    }).filter(Boolean);
+    if(!out.length)throw new Error('No valid entries');return out;
+  }catch{
+    const lines=raw.split(/\r?\n/).map(l=>l.replace(/[",]/g,'').trim()).filter(Boolean);
+    const out=lines.map(l=>({modId:l}));
+    if(!out.length)throw new Error('No valid entries');return out;
+  }
+}
+
+async function addBulk(){
+  if(!canEdit)return toast('View-only','error');
+  try{
+    const mods=parseBulk($('bulkModsInput').value);
+    upsertPool(mods);
+    for(const m of mods)if(m.name)rememberName(m.modId,m.name);
+    toast('Imported '+mods.length+' mod(s) to pool','ok');
+  }catch(e){toast(e.message,'error')}
+}
+
+function toggleAll(){
+  const boxes=modsBody.querySelectorAll('input[type=checkbox]');
+  const allChecked=[...boxes].every(b=>b.checked);
+  boxes.forEach(b=>b.checked=!allChecked);
+  $('checkAll').checked=!allChecked;
+}
+
+function togglePoolAll(){
+  const boxes=poolBody.querySelectorAll('input[type=checkbox]');
+  const allChecked=[...boxes].every(b=>b.checked);
+  boxes.forEach(b=>b.checked=!allChecked);
+  $('poolCheckAll').checked=!allChecked;
+}
+
+function buildLink(){
+  const b=getBase();const q=new URLSearchParams();
+  if(b.serverId)q.set('serverId',b.serverId);
+  q.set('configPath',b.configPath);
+  return location.origin+'/panel?'+q;
+}
+async function copyLink(){
+  try{await navigator.clipboard.writeText(buildLink());toast('Link copied!','ok')}catch{toast('Copy failed','error')}
+}
+
+function syncEdit(){
+  ['btnLookupName','btnOpenWorkshop','btnQueue','btnUpsert','btnDeactivateSelected','btnDeactivateAll','btnBulkAdd','btnPoolActivate','btnPoolActivateAll','btnPoolRemove','modId','modName','modVersion','modContentType','modRequired','restartAfter','bulkModsInput'].forEach(id=>{
+    const el=$(id);if(el)el.disabled=!canEdit;
+  });
+}
+
+// Events
+$('btnLoad').onclick=loadMods;
+$('btnLookupName').onclick=lookupName;
+$('btnOpenWorkshop').onclick=openWorkshopPage;
+$('btnQueue').onclick=queueMod;
+$('btnUpsert').onclick=upsertMod;
+$('btnDeactivateSelected').onclick=()=>deactivateActive(true);
+$('btnDeactivateAll').onclick=()=>deactivateActive(false);
+$('btnBulkAdd').onclick=addBulk;
+$('btnPoolActivate').onclick=()=>activatePool(true);
+$('btnPoolActivateAll').onclick=()=>activatePool(false);
+$('btnPoolRemove').onclick=removePoolSelected;
+$('btnCopyLink').onclick=copyLink;
+$('btnSelectAll').onclick=toggleAll;
+$('btnPoolSelectAll').onclick=togglePoolAll;
+$('checkAll').onchange=toggleAll;
+$('poolCheckAll').onchange=togglePoolAll;
+$('btnModsPrev').onclick=()=>{activeModsPage=Math.max(1,activeModsPage-1);renderMods(activeMods)};
+$('btnModsNext').onclick=()=>{activeModsPage+=1;renderMods(activeMods)};
+$('btnAuditPrev').onclick=()=>{auditLogPage=Math.max(1,auditLogPage-1);renderAuditLog()};
+$('btnAuditNext').onclick=()=>{auditLogPage+=1;renderAuditLog()};
+$('btnAuditRefresh').onclick=loadAuditLog;
+$('modsFilter').oninput=()=>{activeModsPage=1;renderMods(activeMods)};
+$('poolFilter').oninput=renderPool;
+$('modId').oninput=()=>{updateState();hydrate();scheduleAutoLookup()};
+$('modId').onblur=lookupName;
+$('serverId').oninput=saveConn;
+$('configPath').oninput=saveConn;
+
+syncEdit();saveConn();renderPool();loadMods();
+</script>
+</body>
+</html>

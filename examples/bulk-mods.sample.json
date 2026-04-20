@@ -1,0 +1,36 @@
+{
+  "serverId": "873122ac",
+  "configPath": "/config.json",
+  "mods": [
+    {
+      "modId": "REPLACE_WITH_REAL_16_HEX_1",
+      "name": "Example mod 1",
+      "required": true,
+      "contentType": "mod"
+    },
+    {
+      "modId": "REPLACE_WITH_REAL_16_HEX_2",
+      "name": "Example mod 2",
+      "required": true,
+      "contentType": "mod"
+    },
+    {
+      "modId": "REPLACE_WITH_REAL_16_HEX_3",
+      "name": "Example mod 3",
+      "required": true,
+      "contentType": "mod"
+    },
+    {
+      "modId": "REPLACE_WITH_REAL_16_HEX_4",
+      "name": "Example mod 4",
+      "required": true,
+      "contentType": "mod"
+    },
+    {
+      "modId": "REPLACE_WITH_REAL_16_HEX_5",
+      "name": "Example mod 5",
+      "required": true,
+      "contentType": "mod"
+    }
+  ]
+}
