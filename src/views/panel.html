@@ -218,10 +218,13 @@ let auditLogEntries=[];
 let activeModsPage=1;
 let auditLogPage=1;
 let autoLookupTimer=null;
-const CK_NAME='ptero-mod-name-cache-v1', CK_CONN='ptero-mod-conn-v1', CK_POOL='ptero-mod-pool-v1';
+let syncTimer=null;
+let syncInFlight=false;
+const CK_NAME='ptero-mod-name-cache-v1', CK_CONN='ptero-mod-conn-v1';
 const CK_RESOLVE='ptero-mod-resolve-cache-v1';
 const ACTIVE_MODS_PER_PAGE=12;
 const AUDIT_LOG_PER_PAGE=8;
+const AUTO_SYNC_MS=15000;
 
 // Toast system
 function toast(msg,type='info',ms=3500){
@@ -251,7 +254,6 @@ function loadStore(k,fallback){try{const r=localStorage.getItem(k);return r?JSON
 function saveStore(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}
 
 nameCache=loadStore(CK_NAME,{});
-poolMods=loadStore(CK_POOL,[]);
 const resolveCache=loadStore(CK_RESOLVE,{});
 const persistedConn=loadStore(CK_CONN,{});
 const query=new URLSearchParams(location.search);
@@ -271,7 +273,6 @@ function rememberResolvedMeta(id,meta){
   };
   saveStore(CK_RESOLVE,resolveCache);
 }
-function savePool(){saveStore(CK_POOL,poolMods)}
 function getBase(){return{serverId:$('serverId').value.trim(),configPath:$('configPath').value.trim()||'/config.json'}}
 function normalizeModId(v){return String(v||'').trim().toUpperCase()}
 function normalizeContentType(v){return String(v||'mod').trim().toLowerCase()==='game'?'game':'mod'}
@@ -484,11 +485,13 @@ async function editPoolMod(modId){
   if(!result)return;
 
   poolMods[idx]={...row,modId:id,name:result.name,version:result.version,required:result.required,contentType:result.contentType};
-  if(result.name)rememberName(id,result.name);
-  savePool();
-  renderPool();
-  hydrate();
-  toast('Pool mod updated','ok');
+  try{
+    await apiPost('/panel/api/pool/upsert',{...getBase(),mods:[poolMods[idx]]});
+    if(result.name)rememberName(id,result.name);
+    await loadMods({silent:true,skipAudit:true});
+    hydrate();
+    toast('Pool mod updated','ok');
+  }catch(e){toast(e.message,'error')}
 }
 
 async function editActiveMod(modId){
@@ -510,27 +513,6 @@ async function editActiveMod(modId){
     hydrate();
     toast('Active mod updated','ok');
   }catch(e){toast(e.message,'error')}
-}
-
-function upsertPool(mods){
-  const map=new Map(poolMods.map(m=>[normalizeModId(m.modId||m.modID),m]));
-  for(const input of mods){
-    const modId=normalizeModId(input.modId||input.modID||input.modit);
-    if(!modId)continue;
-    const current=map.get(modId)||{modId};
-    const merged={
-      ...current,
-      modId,
-      name:input.name||current.name,
-      version:input.version||current.version,
-      required:Boolean(input.required),
-      contentType:normalizeContentType(input.contentType||current.contentType)
-    };
-    map.set(modId,merged);
-  }
-  poolMods=Array.from(map.values());
-  savePool();
-  renderPool();
 }
 
 function updateState(){
@@ -564,24 +546,28 @@ function openWorkshopPage(){
   window.open('https://reforger.armaplatform.com/workshop/'+encodeURIComponent(modId),'_blank','noopener');
 }
 
-async function loadMods(){
+async function loadMods(options={}){
+  const silent=options.silent===true;
+  const skipAudit=options.skipAudit===true;
   try{
-    toast('Loading mods...','info');
+    if(!silent)toast('Loading mods...','info');
     const res=await apiPost('/panel/api/mods/list',getBase());
     const modsRaw=Array.isArray(res.mods)?res.mods:[];
     const mods=modsRaw.filter(m=>(m.state||'configured-only')!=='runtime-only').map(m=>({
       ...m,
       state:'active'
     }));
+    const poolRes=await apiPost('/panel/api/pool/list',getBase());
+    poolMods=Array.isArray(poolRes.mods)?poolRes.mods:[];
     installedVersionOverride={};
     for(const m of mods){const id=(m.modId||m.modID||'').trim();if(id&&m.version)installedVersionOverride[id]=m.version}
     activeModsPage=1;
     renderMods(mods);
     renderPool();
-    await loadAuditLog();
-    toast('Loaded '+mods.length+' active mod(s)','ok');
+    if(!skipAudit)await loadAuditLog();
+    if(!silent)toast('Loaded '+mods.length+' active mod(s)','ok');
     hydrate();
-  }catch(e){toast(e.message||'Load failed','error')}
+  }catch(e){if(!silent)toast(e.message||'Load failed','error')}
 }
 
 async function lookupName(){
@@ -714,8 +700,9 @@ async function queueMod(){
     if(!name||!ver){
       try{const lk=await apiPost('/panel/api/mods/resolve',{modit:modId});if(!name&&lk.name)name=lk.name;if(!ver&&lk.version)ver=lk.version}catch{}
     }
-    upsertPool([{modId,name,version:ver,required:$('modRequired').checked,contentType:normalizeContentType($('modContentType').value)}]);
+    await apiPost('/panel/api/pool/upsert',{...getBase(),mods:[{modId,name,version:ver,required:$('modRequired').checked,contentType:normalizeContentType($('modContentType').value)}]});
     if(name)rememberName(modId,name);
+    await loadMods({silent:true,skipAudit:true});
     toast('Added to pool','ok');
     updateState();
   }catch(e){toast(e.message,'error')}
@@ -738,9 +725,7 @@ async function upsertMod(){
     toast('Activating mod...','info');
     await apiPost('/panel/api/mods/upsert',{...getBase(),restartAfterInstall:$('restartAfter').checked,
       mods:[{modId,name,version:ver,required:$('modRequired').checked,contentType:normalizeContentType($('modContentType').value)}]});
-    poolMods=poolMods.filter(mod=>normalizeModId(mod.modId||mod.modID)!==modId);
-    savePool();
-    renderPool();
+    await apiPost('/panel/api/pool/remove',{...getBase(),modIDs:[modId]});
     if(name)rememberName(modId,name);
     await loadMods();toast('Mod activated!','ok');updateState();
   }catch(e){toast(e.message,'error')}
@@ -767,21 +752,21 @@ async function deactivateActive(selectedOnly){
   try{
     toast('Deactivating '+sel.length+' mod(s)...','info');
     await apiPost('/panel/api/mods/remove',{...getBase(),restartAfterInstall:$('restartAfter').checked,modIDs:sel});
-    upsertPool(toPool);
+    await apiPost('/panel/api/pool/upsert',{...getBase(),mods:toPool});
     await loadMods();toast('Deactivated '+sel.length+' mod(s) and moved to pool','ok');
   }catch(e){toast(e.message,'error')}
 }
 
-function removePoolSelected(){
+async function removePoolSelected(){
   if(!canEdit)return toast('View-only','error');
   const sel=Array.from(poolBody.querySelectorAll('input[type=checkbox]:checked')).map(e=>normalizeModId(e.dataset.poolModid)).filter(Boolean);
   if(!sel.length)return toast('Select mods in pool','error');
-  const removeSet=new Set(sel);
-  poolMods=poolMods.filter(m=>!removeSet.has(normalizeModId(m.modId||m.modID)));
-  savePool();
-  renderPool();
-  updateState();
-  toast('Removed '+sel.length+' mod(s) from pool','ok');
+  try{
+    await apiPost('/panel/api/pool/remove',{...getBase(),modIDs:sel});
+    await loadMods({silent:true,skipAudit:true});
+    updateState();
+    toast('Removed '+sel.length+' mod(s) from pool','ok');
+  }catch(e){toast(e.message,'error')}
 }
 
 async function activatePool(selectedOnly){
@@ -799,10 +784,7 @@ async function activatePool(selectedOnly){
 
     toast('Activating '+toActivate.length+' mod(s)...','info');
     await apiPost('/panel/api/mods/upsert',{...getBase(),restartAfterInstall:$('restartAfter').checked,mods:toActivate});
-    const removeSet=new Set(toActivate.map(m=>normalizeModId(m.modId||m.modID)));
-    poolMods=poolMods.filter(m=>!removeSet.has(normalizeModId(m.modId||m.modID)));
-    savePool();
-    renderPool();
+    await apiPost('/panel/api/pool/remove',{...getBase(),modIDs:toActivate.map(m=>normalizeModId(m.modId||m.modID)).filter(Boolean)});
     await loadMods();
     toast('Activated '+toActivate.length+' mod(s)','ok');
   }catch(e){toast(e.message,'error')}
@@ -832,7 +814,8 @@ async function addBulk(){
   if(!canEdit)return toast('View-only','error');
   try{
     const mods=parseBulk($('bulkModsInput').value);
-    upsertPool(mods);
+    await apiPost('/panel/api/pool/upsert',{...getBase(),mods});
+    await loadMods({silent:true,skipAudit:true});
     for(const m of mods)if(m.name)rememberName(m.modId,m.name);
     toast('Imported '+mods.length+' mod(s) to pool','ok');
   }catch(e){toast(e.message,'error')}
@@ -860,6 +843,25 @@ function buildLink(){
 }
 async function copyLink(){
   try{await navigator.clipboard.writeText(buildLink());toast('Link copied!','ok')}catch{toast('Copy failed','error')}
+}
+
+async function syncFromServer(){
+  if(syncInFlight)return;
+  syncInFlight=true;
+  try{
+    await loadMods({silent:true,skipAudit:true});
+  }finally{
+    syncInFlight=false;
+  }
+}
+
+function startAutoSync(){
+  if(syncTimer)clearInterval(syncTimer);
+  syncTimer=setInterval(()=>{
+    if(document.visibilityState==='visible'){
+      syncFromServer();
+    }
+  },AUTO_SYNC_MS);
 }
 
 function syncEdit(){
@@ -896,8 +898,10 @@ $('modId').oninput=()=>{updateState();hydrate();scheduleAutoLookup()};
 $('modId').onblur=lookupName;
 $('serverId').oninput=saveConn;
 $('configPath').oninput=saveConn;
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')syncFromServer();});
+window.addEventListener('focus',()=>syncFromServer());
 
-syncEdit();saveConn();renderPool();loadMods();
+syncEdit();saveConn();renderPool();loadMods();startAutoSync();
 </script>
 </body>
 </html>

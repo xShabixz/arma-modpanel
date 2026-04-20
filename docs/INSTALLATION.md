@@ -32,6 +32,7 @@ Required:
 Common optional values:
 - `PTERODACTYL_API_KIND` (`client` by default)
 - `API_AUTH_TOKEN` (protects non-panel API routes)
+- `PANEL_POOL_STORE_PATH` (shared pool storage file, default `logs/panel-pool.json`)
 - `MOD_NAME_LOOKUP_URL_TEMPLATE`
 - `REFORGER_MODS_API_BASE_URL`
 
@@ -62,6 +63,7 @@ npm run start
 5. Use `Activate Selected` or `Activate All` to write pool mods into active config
 6. Use `Deactivate Selected` or `Deactivate All` to move active mods out of config and back to pool
 7. Use pool `Remove` only when you want to delete staged entries from pool list
+8. Pool data is shared server-side, so all users viewing the same `serverId` and `configPath` see the same pool state.
 
 ## 6) API Overview
 

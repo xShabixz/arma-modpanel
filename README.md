@@ -11,7 +11,7 @@ Small Fastify + TypeScript service for managing Arma Reforger `game.mods` throug
 - Manage mods in `game.mods`
 - Built-in web panel at `/panel`
 - Add, edit, remove, and bulk import mods
-- Pool workflow: stage mods, activate from pool, and deactivate back to pool
+- Shared pool workflow: stage mods, activate from pool, and deactivate back to pool across users
 - Optional dependency auto-add during upsert
 - Audit log for add/update/remove actions, stored as JSONL on disk
 - Name/version lookup from Steam, Arma Reforger workshop metadata, or a custom resolver template

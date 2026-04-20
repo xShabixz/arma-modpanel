@@ -9,6 +9,7 @@ const envSchema = z.object({
   LOG_LEVEL: z.string().default("info"),
   API_AUTH_TOKEN: z.string().optional(),
   MOD_AUDIT_LOG_PATH: z.string().default("logs/mod-audit.log"),
+  PANEL_POOL_STORE_PATH: z.string().default("logs/panel-pool.json"),
   PTERODACTYL_BASE_URL: z.string().url().optional(),
   PTERODACTYL_API_KEY: z.string().optional(),
   PTERODACTYL_API_KIND: z.enum(["client", "application"]).default("client"),

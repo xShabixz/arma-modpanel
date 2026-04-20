@@ -14,6 +14,7 @@ import {
 import { appendAuditLog, buildAuditChanges, AuditModSnapshot, readAuditLog } from "../services/auditLog.js";
 import { expandModsWithDependencies } from "../services/dependencyAutoAdd.js";
 import { resolveModName } from "../services/modNameResolver.js";
+import { getPanelPool, removePanelPoolMods, setPanelPool, upsertPanelPool } from "../services/panelPoolStore.js";
 import { PterodactylClient } from "../services/pterodactylClient.js";
 
 type PanelModState = "active" | "configured-only" | "runtime-only";
@@ -310,6 +311,95 @@ export async function panelRoutes(app: FastifyInstance): Promise<void> {
       request.log.error(error, "Panel remove mods failed");
       return reply.code(400).send({
         message: error instanceof Error ? error.message : "Panel remove mods failed"
+      });
+    }
+  });
+
+  const panelPoolModSchema = z.object({
+    modId: z.string().min(1),
+    name: z.string().optional(),
+    version: z.string().optional(),
+    required: z.boolean().optional().default(false),
+    contentType: z.enum(["mod", "game"]).optional().default("mod")
+  });
+
+  app.post("/panel/api/pool/list", async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsed = z
+      .object({
+        serverId: z.string().optional(),
+        configPath: z.string().optional()
+      })
+      .default({})
+      .parse(request.body ?? {});
+
+    const payload = resolvePanelTarget(parsed);
+    try {
+      const mods = await getPanelPool(payload.serverId, payload.configPath);
+      return { mods };
+    } catch (error) {
+      request.log.error(error, "Panel pool list failed");
+      return reply.code(400).send({
+        message: error instanceof Error ? error.message : "Panel pool list failed"
+      });
+    }
+  });
+
+  app.post("/panel/api/pool/upsert", async (request: FastifyRequest, reply: FastifyReply) => {
+    const payload = z
+      .object({
+        serverId: z.string().min(1),
+        configPath: z.string().min(1).default("/config.json"),
+        mods: z.array(panelPoolModSchema).min(1)
+      })
+      .parse(request.body);
+
+    try {
+      const mods = await upsertPanelPool(payload.serverId, payload.configPath, payload.mods);
+      return { mods };
+    } catch (error) {
+      request.log.error(error, "Panel pool upsert failed");
+      return reply.code(400).send({
+        message: error instanceof Error ? error.message : "Panel pool upsert failed"
+      });
+    }
+  });
+
+  app.post("/panel/api/pool/remove", async (request: FastifyRequest, reply: FastifyReply) => {
+    const payload = z
+      .object({
+        serverId: z.string().min(1),
+        configPath: z.string().min(1).default("/config.json"),
+        modIDs: z.array(z.string().min(1)).min(1)
+      })
+      .parse(request.body);
+
+    try {
+      const mods = await removePanelPoolMods(payload.serverId, payload.configPath, payload.modIDs);
+      return { mods };
+    } catch (error) {
+      request.log.error(error, "Panel pool remove failed");
+      return reply.code(400).send({
+        message: error instanceof Error ? error.message : "Panel pool remove failed"
+      });
+    }
+  });
+
+  app.post("/panel/api/pool/set", async (request: FastifyRequest, reply: FastifyReply) => {
+    const payload = z
+      .object({
+        serverId: z.string().min(1),
+        configPath: z.string().min(1).default("/config.json"),
+        mods: z.array(panelPoolModSchema)
+      })
+      .parse(request.body);
+
+    try {
+      const mods = await setPanelPool(payload.serverId, payload.configPath, payload.mods);
+      return { mods };
+    } catch (error) {
+      request.log.error(error, "Panel pool set failed");
+      return reply.code(400).send({
+        message: error instanceof Error ? error.message : "Panel pool set failed"
       });
     }
   });
