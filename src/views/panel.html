@@ -38,6 +38,7 @@
           <button id="btnLoad" class="btn btn-primary">Load Mods</button>
           <button id="btnCopyLink" class="btn btn-ghost btn-sm">Copy Link</button>
         </div>
+        <div id="syncMeta" style="margin-top:8px;font-size:.78rem;color:var(--text3)">Last synced: - | Sync: idle</div>
       </div>
 
       <div class="card">
@@ -220,6 +221,9 @@ let auditLogPage=1;
 let autoLookupTimer=null;
 let syncTimer=null;
 let syncInFlight=false;
+let sseConnection=null;
+let lastSyncedAt='-';
+let syncStatus='idle';
 const CK_NAME='ptero-mod-name-cache-v1', CK_CONN='ptero-mod-conn-v1';
 const CK_RESOLVE='ptero-mod-resolve-cache-v1';
 const ACTIVE_MODS_PER_PAGE=12;
@@ -288,6 +292,23 @@ function formatAuditChange(change){
   if(change.action==='add') return label+': '+after;
   if(change.action==='remove') return label+': '+before;
   return label+': '+(after||before);
+}
+
+function renderSyncMeta(){
+  const el=$('syncMeta');
+  if(!el)return;
+  el.textContent='Last synced: '+lastSyncedAt+' | Sync: '+syncStatus;
+}
+
+function markSynced(status){
+  lastSyncedAt=new Date().toLocaleTimeString();
+  if(status)syncStatus=status;
+  renderSyncMeta();
+}
+
+function setSyncStatus(status){
+  syncStatus=status;
+  renderSyncMeta();
 }
 
 async function apiPost(path,body){
@@ -565,6 +586,7 @@ async function loadMods(options={}){
     renderMods(mods);
     renderPool();
     if(!skipAudit)await loadAuditLog();
+    markSynced(sseConnection?'live':'polling');
     if(!silent)toast('Loaded '+mods.length+' active mod(s)','ok');
     hydrate();
   }catch(e){if(!silent)toast(e.message||'Load failed','error')}
@@ -864,6 +886,40 @@ function startAutoSync(){
   },AUTO_SYNC_MS);
 }
 
+function stopSSESync(){
+  if(sseConnection){
+    sseConnection.close();
+    sseConnection=null;
+  }
+}
+
+function startSSESync(){
+  stopSSESync();
+  const base=getBase();
+  if(!base.serverId)return;
+  try{
+    const q=new URLSearchParams({serverId:base.serverId,configPath:base.configPath});
+    const streamUrl='/panel/api/sync/stream?'+q.toString();
+    const es=new EventSource(streamUrl);
+    sseConnection=es;
+    setSyncStatus('connecting');
+
+    es.addEventListener('connected',()=>{
+      setSyncStatus('live');
+    });
+
+    es.addEventListener('sync',()=>{
+      syncFromServer();
+    });
+
+    es.onerror=()=>{
+      setSyncStatus('reconnecting');
+    };
+  }catch{
+    setSyncStatus('unavailable');
+  }
+}
+
 function syncEdit(){
   ['btnLookupName','btnOpenWorkshop','btnQueue','btnUpsert','btnDeactivateSelected','btnDeactivateAll','btnBulkAdd','btnPoolActivate','btnPoolActivateAll','btnPoolRemove','modId','modName','modVersion','modContentType','modRequired','restartAfter','bulkModsInput'].forEach(id=>{
     const el=$(id);if(el)el.disabled=!canEdit;
@@ -896,12 +952,13 @@ $('modsFilter').oninput=()=>{activeModsPage=1;renderMods(activeMods)};
 $('poolFilter').oninput=renderPool;
 $('modId').oninput=()=>{updateState();hydrate();scheduleAutoLookup()};
 $('modId').onblur=lookupName;
-$('serverId').oninput=saveConn;
-$('configPath').oninput=saveConn;
+$('serverId').oninput=()=>{saveConn();startSSESync();};
+$('configPath').oninput=()=>{saveConn();startSSESync();};
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')syncFromServer();});
 window.addEventListener('focus',()=>syncFromServer());
+window.addEventListener('beforeunload',()=>{stopSSESync();if(syncTimer)clearInterval(syncTimer);});
 
-syncEdit();saveConn();renderPool();loadMods();startAutoSync();
+syncEdit();saveConn();renderPool();renderSyncMeta();loadMods();startAutoSync();startSSESync();
 </script>
 </body>
 </html>

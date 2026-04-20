@@ -19,6 +19,13 @@ import { PterodactylClient } from "../services/pterodactylClient.js";
 
 type PanelModState = "active" | "configured-only" | "runtime-only";
 
+type SyncEventType =
+  | "mods-upsert"
+  | "mods-remove"
+  | "pool-upsert"
+  | "pool-remove"
+  | "pool-set";
+
 function extractRuntimeModIds(payload: unknown): string[] {
   const runtimeText = JSON.stringify(payload ?? {});
   const ids = runtimeText.match(/\b[A-F0-9]{16}\b/gi) ?? [];
@@ -35,10 +42,48 @@ const panelHtmlTemplate = readFileSync(resolve(viewsDir, "panel.html"), "utf8")
   .replace("{{CSS}}", panelCss);
 
 export async function panelRoutes(app: FastifyInstance): Promise<void> {
+  const syncStreams = new Map<string, Set<FastifyReply>>();
+
   const resolvePanelTarget = (input: { serverId?: string; configPath?: string }) => ({
     serverId: String(input.serverId || "").trim() || "873122ac",
     configPath: String(input.configPath || "").trim() || "/config.json"
   });
+
+  const syncKey = (serverId: string, configPath: string): string =>
+    `${serverId.trim()}::${configPath.trim()}`;
+
+  const emitSync = (
+    serverId: string,
+    configPath: string,
+    event: SyncEventType,
+    detail: Record<string, unknown> = {}
+  ) => {
+    const key = syncKey(serverId, configPath);
+    const listeners = syncStreams.get(key);
+    if (!listeners || listeners.size === 0) {
+      return;
+    }
+
+    const data = JSON.stringify({
+      event,
+      serverId,
+      configPath,
+      at: new Date().toISOString(),
+      ...detail
+    });
+
+    for (const streamReply of listeners) {
+      try {
+        streamReply.raw.write(`event: sync\ndata: ${data}\n\n`);
+      } catch {
+        listeners.delete(streamReply);
+      }
+    }
+
+    if (listeners.size === 0) {
+      syncStreams.delete(key);
+    }
+  };
 
   app.get("/panel", async (request: FastifyRequest, reply: FastifyReply) => {
     const query = z
@@ -63,6 +108,60 @@ export async function panelRoutes(app: FastifyInstance): Promise<void> {
       .replaceAll("__SERVER_ID__", serverId)
       .replaceAll("__CONFIG_PATH__", configPath)
       .replaceAll("__PANEL_CAN_EDIT__", panelCanEdit ? "true" : "false");
+  });
+
+  app.get("/panel/api/sync/stream", async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsed = z
+      .object({
+        serverId: z.string().optional(),
+        configPath: z.string().optional()
+      })
+      .default({})
+      .parse(request.query ?? {});
+
+    const payload = resolvePanelTarget(parsed);
+    const key = syncKey(payload.serverId, payload.configPath);
+
+    reply.raw.setHeader("Content-Type", "text/event-stream");
+    reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
+    reply.raw.setHeader("Connection", "keep-alive");
+    reply.raw.setHeader("X-Accel-Buffering", "no");
+    if (typeof reply.raw.flushHeaders === "function") {
+      reply.raw.flushHeaders();
+    }
+    reply.hijack();
+
+    const listeners = syncStreams.get(key) ?? new Set<FastifyReply>();
+    listeners.add(reply);
+    syncStreams.set(key, listeners);
+
+    const connected = JSON.stringify({
+      event: "connected",
+      serverId: payload.serverId,
+      configPath: payload.configPath,
+      at: new Date().toISOString()
+    });
+    reply.raw.write(`event: connected\ndata: ${connected}\n\n`);
+
+    const heartbeat = setInterval(() => {
+      try {
+        reply.raw.write(": heartbeat\n\n");
+      } catch {
+        clearInterval(heartbeat);
+      }
+    }, 25000);
+
+    request.raw.on("close", () => {
+      clearInterval(heartbeat);
+      const bucket = syncStreams.get(key);
+      if (!bucket) {
+        return;
+      }
+      bucket.delete(reply);
+      if (bucket.size === 0) {
+        syncStreams.delete(key);
+      }
+    });
   });
 
   const listModsHandler = async (
@@ -260,6 +359,11 @@ export async function panelRoutes(app: FastifyInstance): Promise<void> {
         restarted = true;
       }
 
+      emitSync(payload.serverId, payload.configPath, "mods-upsert", {
+        changedCount: changes.length,
+        restarted
+      });
+
       return { mods, restarted };
     } catch (error) {
       request.log.error(error, "Panel upsert mods failed");
@@ -305,6 +409,11 @@ export async function panelRoutes(app: FastifyInstance): Promise<void> {
         await client.restartServer(payload.serverId);
         restarted = true;
       }
+
+      emitSync(payload.serverId, payload.configPath, "mods-remove", {
+        changedCount: changes.length,
+        restarted
+      });
 
       return { mods, restarted };
     } catch (error) {
@@ -355,6 +464,9 @@ export async function panelRoutes(app: FastifyInstance): Promise<void> {
 
     try {
       const mods = await upsertPanelPool(payload.serverId, payload.configPath, payload.mods);
+      emitSync(payload.serverId, payload.configPath, "pool-upsert", {
+        changedCount: payload.mods.length
+      });
       return { mods };
     } catch (error) {
       request.log.error(error, "Panel pool upsert failed");
@@ -375,6 +487,9 @@ export async function panelRoutes(app: FastifyInstance): Promise<void> {
 
     try {
       const mods = await removePanelPoolMods(payload.serverId, payload.configPath, payload.modIDs);
+      emitSync(payload.serverId, payload.configPath, "pool-remove", {
+        changedCount: payload.modIDs.length
+      });
       return { mods };
     } catch (error) {
       request.log.error(error, "Panel pool remove failed");
@@ -395,6 +510,9 @@ export async function panelRoutes(app: FastifyInstance): Promise<void> {
 
     try {
       const mods = await setPanelPool(payload.serverId, payload.configPath, payload.mods);
+      emitSync(payload.serverId, payload.configPath, "pool-set", {
+        changedCount: payload.mods.length
+      });
       return { mods };
     } catch (error) {
       request.log.error(error, "Panel pool set failed");
