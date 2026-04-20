@@ -221,6 +221,7 @@ let auditLogPage=1;
 let autoLookupTimer=null;
 let syncTimer=null;
 let syncInFlight=false;
+let syncPending=false;
 let sseConnection=null;
 let lastSyncedAt='-';
 let syncStatus='idle';
@@ -868,10 +869,16 @@ async function copyLink(){
 }
 
 async function syncFromServer(){
-  if(syncInFlight)return;
+  if(syncInFlight){
+    syncPending=true;
+    return;
+  }
   syncInFlight=true;
   try{
-    await loadMods({silent:true,skipAudit:true});
+    do{
+      syncPending=false;
+      await loadMods({silent:true,skipAudit:true});
+    }while(syncPending);
   }finally{
     syncInFlight=false;
   }
