@@ -64,12 +64,6 @@ npm run start
 npm run check
 ```
 
-## Prepare for GitHub
-
-- Keep only source code, docs, examples, and reusable scripts.
-- Do not commit `.env`.
-- Do not commit machine-specific remote scripts with passwords, tokens, or fixed hostnames.
-- Review `deploy.sh` and set your own `DEPLOY_REMOTE` and `DEPLOY_DIR` before use.
 
 ## Documentation
 
